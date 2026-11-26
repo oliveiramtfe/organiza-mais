@@ -1,0 +1,91 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Organiza+</title>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<style>
+:root{--navy:#10243a;--green:#20a675;--bg:#f3f6f8;--muted:#718096}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);font:15px system-ui,-apple-system,Segoe UI,sans-serif;color:#182536}
+header{background:var(--navy);color:white;padding:22px 18px 26px;border-radius:0 0 22px 22px}
+header h1{margin:0;font-size:25px}header p{margin:5px 0 0;color:#d6e1ea}
+main{max-width:760px;margin:0 auto;padding:16px}
+.card{background:white;border-radius:16px;padding:16px;margin:12px 0;box-shadow:0 3px 14px #10243a0d}
+h2{font-size:18px;margin:0 0 12px;color:var(--navy)}
+input,select,button{font:inherit;border-radius:10px;padding:12px;border:1px solid #d8e0e7;width:100%;margin:5px 0}
+button{background:var(--green);color:white;border:0;font-weight:700;cursor:pointer}
+button.secondary{background:#e9f4ef;color:#167c59}button.danger{background:#fff0f0;color:#a33}
+.row{display:grid;grid-template-columns:1fr 1fr;gap:8px}.stats{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
+.stat{background:#eef7f3;border-radius:12px;padding:12px}.stat small{display:block;color:var(--muted)}.stat strong{font-size:18px;color:var(--navy)}
+.item{display:flex;justify-content:space-between;gap:12px;padding:10px 0;border-bottom:1px solid #edf0f2}.item:last-child{border:0}
+.muted{color:var(--muted);font-size:13px}.hidden{display:none!important}.tabs{display:flex;gap:6px;overflow:auto;margin:12px 0}.tabs button{white-space:nowrap;width:auto;padding:10px 14px;background:#e6ebef;color:var(--navy)}.tabs button.active{background:var(--navy);color:white}
+#message{padding:10px;border-radius:10px;background:#fff8df;color:#725b12;margin:10px 0;display:none}
+@media(max-width:430px){.stats{grid-template-columns:1fr 1fr}.row{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+<header><h1>Organiza+</h1><p>Sua casa, suas contas, tudo em ordem.</p></header>
+<main>
+<div id="message"></div>
+<section id="auth" class="card">
+<h2>Entre ou crie sua conta</h2>
+<input id="email" type="email" placeholder="Seu e-mail">
+<input id="password" type="password" placeholder="Senha (mínimo 6 caracteres)">
+<div class="row"><button id="login">Entrar</button><button id="signup" class="secondary">Criar conta</button></div>
+<p class="muted">Ao criar a conta, confirme o e-mail se o Supabase solicitar.</p>
+</section>
+<section id="app" class="hidden">
+<div class="card">
+<div class="row" style="align-items:center"><div><strong id="welcome">Olá!</strong><div class="muted" id="useremail"></div></div><button id="logout" class="secondary">Sair</button></div>
+<div class="stats" style="margin-top:14px">
+<div class="stat"><small>Entradas</small><strong id="income">R$ 0,00</strong></div>
+<div class="stat"><small>Saídas</small><strong id="expense">R$ 0,00</strong></div>
+<div class="stat"><small>Saldo</small><strong id="balance">R$ 0,00</strong></div>
+</div></div>
+<div class="tabs">
+<button class="active" data-tab="finance">Finanças</button><button data-tab="bills">Contas</button><button data-tab="shopping">Compras</button><button data-tab="tasks">Tarefas</button>
+</div>
+<section id="finance" class="panel card"><h2>Adicionar movimentação</h2>
+<div class="row"><select id="txType"><option value="expense">Despesa</option><option value="income">Entrada</option></select><input id="txAmount" type="number" min="0.01" step="0.01" placeholder="Valor (R$)"></div>
+<input id="txDesc" placeholder="Descrição (ex.: mercado, salário)"><button id="addTx">Salvar movimentação</button><h2 style="margin-top:18px">Histórico</h2><div id="txList" class="muted">Nenhuma movimentação.</div></section>
+<section id="bills" class="panel card hidden"><h2>Contas a pagar</h2><input id="billTitle" placeholder="Nome da conta"><div class="row"><input id="billDue" type="date"><input id="billAmount" type="number" min="0" step="0.01" placeholder="Valor (R$)"></div><button id="addBill">Adicionar conta</button><div id="billList"></div></section>
+<section id="shopping" class="panel card hidden"><h2>Lista de compras</h2><input id="shopName" placeholder="O que precisa comprar?"><button id="addShop">Adicionar item</button><div id="shopList"></div></section>
+<section id="tasks" class="panel card hidden"><h2>Tarefas domésticas</h2><input id="taskName" placeholder="Ex.: lavar roupa"><button id="addTask">Adicionar tarefa</button><div id="taskList"></div></section>
+<p class="muted">Seus dados ficam vinculados à sua conta. Esta versão inicial ainda não inclui compartilhamento familiar.</p>
+</section>
+</main>
+<script>
+const SUPABASE_URL = "https://kjzbixukrhfjcoexkeds.supabase.co";
+const SUPABASE_PUBLISHABLE_KEY = "sb_publishable_M_6okCiCO1hpnJasPqvXUA_D3TIslL8";
+const db = window.supabase.createClient(SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY);
+const $ = id => document.getElementById(id);
+const money = n => Number(n||0).toLocaleString('pt-BR',{style:'currency',currency:'BRL'});
+function msg(t){$('message').textContent=t;$('message').style.display='block'}
+function esc(s){return String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]))}
+async function current(){const {data:{session}}=await db.auth.getSession();showSession(session);if(session)await loadAll()}
+function showSession(s){$('auth').classList.toggle('hidden',!!s);$('app').classList.toggle('hidden',!s);if(s){$('useremail').textContent=s.user.email||'';$('welcome').textContent='Bem-vindo ao Organiza+'}}
+$('signup').onclick=async()=>{const {data,error}=await db.auth.signUp({email:$('email').value,password:$('password').value});if(error)msg(error.message);else msg(data.session?'Conta criada!':'Conta criada. Confira seu e-mail para confirmar o cadastro.')};
+$('login').onclick=async()=>{const {data,error}=await db.auth.signInWithPassword({email:$('email').value,password:$('password').value});if(error)msg(error.message);else{showSession(data.session);await loadAll()}};
+$('logout').onclick=async()=>{await db.auth.signOut();showSession(null)};
+document.querySelectorAll('[data-tab]').forEach(b=>b.onclick=()=>{document.querySelectorAll('[data-tab]').forEach(x=>x.classList.toggle('active',x===b));document.querySelectorAll('.panel').forEach(x=>x.classList.toggle('hidden',x.id!==b.dataset.tab))});
+async function add(table,obj){const {error}=await db.from(table).insert(obj);if(error)msg(error.message);else await loadAll()}
+async function loadAll(){const {data:{user}}=await db.auth.getUser();if(!user)return;
+ const [tx,bills,shops,tasks]=await Promise.all(['transactions','bills','shopping_items','tasks'].map(t=>db.from(t).select('*').order('created_at',{ascending:false})));
+ for(const r of [tx,bills,shops,tasks])if(r.error){msg('Banco ainda não configurado. Execute o arquivo setup.sql no SQL Editor do Supabase. Detalhe: '+r.error.message);return}
+ const inc=tx.data.filter(x=>x.kind==='income').reduce((a,x)=>a+Number(x.amount),0),out=tx.data.filter(x=>x.kind==='expense').reduce((a,x)=>a+Number(x.amount),0);
+ $('income').textContent=money(inc);$('expense').textContent=money(out);$('balance').textContent=money(inc-out);
+ $('txList').innerHTML=tx.data.length?tx.data.map(x=>`<div class="item"><span>${esc(x.description)}<br><small class="muted">${x.kind==='income'?'Entrada':'Despesa'}</small></span><strong>${money(x.amount)}</strong></div>`).join(''):'Nenhuma movimentação.';
+ $('billList').innerHTML=bills.data.map(x=>`<div class="item"><span>${esc(x.title)}<br><small class="muted">Vence: ${esc(x.due_date||'Sem data')} · ${x.paid?'Paga':'Pendente'}</small></span><span>${money(x.amount)}<br><button class="secondary" onclick="togglePaid('${x.id}',${!x.paid})">${x.paid?'Reabrir':'Marcar paga'}</button></span></div>`).join('')||'<p class="muted">Nenhuma conta cadastrada.</p>';
+ $('shopList').innerHTML=shops.data.map(x=>`<div class="item"><label><input style="width:auto" type="checkbox" ${x.done?'checked':''} onchange="toggleRow('shopping_items','${x.id}',this.checked)"> ${esc(x.name)}</label><button class="danger" style="width:auto" onclick="removeRow('shopping_items','${x.id}')">Excluir</button></div>`).join('')||'<p class="muted">Sua lista está vazia.</p>';
+ $('taskList').innerHTML=tasks.data.map(x=>`<div class="item"><label><input style="width:auto" type="checkbox" ${x.done?'checked':''} onchange="toggleRow('tasks','${x.id}',this.checked)"> ${esc(x.title)}</label><button class="danger" style="width:auto" onclick="removeRow('tasks','${x.id}')">Excluir</button></div>`).join('')||'<p class="muted">Nenhuma tarefa cadastrada.</p>';
+}
+window.togglePaid=async(id,paid)=>{const {error}=await db.from('bills').update({paid}).eq('id',id);if(error)msg(error.message);else loadAll()};
+window.toggleRow=async(t,id,done)=>{const {error}=await db.from(t).update({done}).eq('id',id);if(error)msg(error.message);else loadAll()};
+window.removeRow=async(t,id)=>{const {error}=await db.from(t).delete().eq('id',id);if(error)msg(error.message);else loadAll()};
+$('addTx').onclick=()=>{const amount=Number($('txAmount').value);if(!amount||amount<=0)return msg('Informe um valor válido.');add('transactions',{kind:$('txType').value,amount,description:$('txDesc').value.trim()||'Sem descrição'})};
+$('addBill').onclick=()=>{if(!$('billTitle').value.trim())return msg('Informe o nome da conta.');add('bills',{title:$('billTitle').value.trim(),due_date:$('billDue').value||null,amount:Number($('billAmount').value)||0})};
+$('addShop').onclick=()=>{if(!$('shopName').value.trim())return;add('shopping_items',{name:$('shopName').value.trim()})};
+$('addTask').onclick=()=>{if(!$('taskName').value.trim())return;add('tasks',{title:$('taskName').value.trim()})};
+current();
+</script>
+</body></html>
